@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { SeqViz } from "seqviz";
 import { 
   Tabs, 
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CircleSlash, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 interface VisualizerPanelProps {
   sequence: string;
@@ -28,6 +29,7 @@ export function VisualizerPanel({
   const [viewer, setViewer] = useState<"circular" | "linear" | "both">("both");
   const [enzymes, setEnzymes] = useState<string[]>([]);
   const [showComplement, setShowComplement] = useState<boolean>(true);
+  const [renderError, setRenderError] = useState<boolean>(false);
   
   // Common restriction enzymes
   const commonEnzymes = ["EcoRI", "BamHI", "HindIII", "XbaI", "PstI", "SalI"];
@@ -41,6 +43,11 @@ export function VisualizerPanel({
     }
   };
   
+  // Reset error state when sequence changes
+  useEffect(() => {
+    setRenderError(false);
+  }, [sequence]);
+  
   // Handle SeqViz selection
   const handleSelection = (selection: any) => {
     if (selection && selection.start !== undefined && selection.end !== undefined) {
@@ -48,6 +55,12 @@ export function VisualizerPanel({
     } else {
       onRangeSelect(null);
     }
+  };
+  
+  // Handle error in SeqViz
+  const handleError = () => {
+    setRenderError(true);
+    toast.error("Error visualizing sequence. The sequence may be invalid or too complex.");
   };
 
   if (!sequence) {
@@ -62,8 +75,41 @@ export function VisualizerPanel({
     );
   }
 
+  if (renderError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-muted/20">
+        <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+        <h3 className="text-lg font-medium mb-2">Visualization Error</h3>
+        <p className="text-sm text-muted-foreground text-center max-w-md">
+          Unable to visualize this sequence. It may contain invalid characters or be in an unsupported format.
+        </p>
+        <Button 
+          variant="outline" 
+          className="mt-4"
+          onClick={() => setRenderError(false)}
+        >
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
   // Make sure we have a valid sequence to prevent errors
-  const safeSequence = sequence || "";
+  // Remove any non-alphanumeric characters to prevent SeqViz errors
+  const safeSequence = sequence.replace(/[^a-zA-Z]/g, "");
+
+  // Don't render SeqViz if sequence is empty after cleaning
+  if (!safeSequence.length) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-muted/20">
+        <AlertCircle className="w-12 h-12 text-amber-400 mb-4" />
+        <h3 className="text-lg font-medium mb-2">Invalid Sequence</h3>
+        <p className="text-sm text-muted-foreground text-center max-w-md">
+          The sequence contains no valid characters. Please enter a valid DNA, RNA, or protein sequence.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -106,8 +152,16 @@ export function VisualizerPanel({
       </div>
 
       <div className="flex-1 relative">
-        {safeSequence.length > 0 ? (
-          <div className="h-full w-full">
+        <div className="h-full w-full">
+          <ErrorBoundary fallback={
+            <div className="flex flex-col items-center justify-center h-full">
+              <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+              <h3 className="text-lg font-medium mb-2">Visualization Error</h3>
+              <p className="text-sm text-center max-w-md">
+                There was an error displaying this sequence.
+              </p>
+            </div>
+          }>
             <SeqViz
               name="GeneForge Sequence"
               seq={safeSequence}
@@ -122,16 +176,36 @@ export function VisualizerPanel({
                 end: selectedRange.end,
               } : undefined}
             />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center text-muted-foreground">
-              <AlertCircle className="w-10 h-10 mx-auto mb-2" />
-              <p>No sequence to visualize</p>
-            </div>
-          </div>
-        )}
+          </ErrorBoundary>
+        </div>
       </div>
     </div>
   );
+}
+
+// Simple error boundary component to catch SeqViz errors
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; fallback: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("SeqViz error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+
+    return this.props.children;
+  }
 }
