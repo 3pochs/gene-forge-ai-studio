@@ -4,10 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { UploadButton } from "./UploadButton";
 import { SequenceEditor } from "./SequenceEditor";
@@ -22,31 +19,57 @@ export function GeneEditor() {
   const [sequenceType, setSequenceType] = useState<"dna" | "rna" | "protein" | "unknown">("unknown");
   const [selectedRange, setSelectedRange] = useState<{start: number, end: number} | null>(null);
   const [annotations, setAnnotations] = useState<any[]>([]);
+  const [notes, setNotes] = useState<any[]>([]);
   const [seqvizRef, setSeqvizRef] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
-  // On mount, check localStorage for saved sequence
+  // On mount, check localStorage for saved sequence and data
   useEffect(() => {
     try {
       const savedSequence = localStorage.getItem("geneforge-sequence");
+      const savedAnnotations = localStorage.getItem("geneforge-annotations");
+      const savedNotes = localStorage.getItem("geneforge-notes");
+      
       if (savedSequence) {
         setSequence(savedSequence);
         detectSequenceType(savedSequence);
       }
+      
+      if (savedAnnotations) {
+        setAnnotations(JSON.parse(savedAnnotations));
+      }
+      
+      if (savedNotes) {
+        setNotes(JSON.parse(savedNotes));
+      }
     } catch (error) {
-      console.error("Error loading saved sequence:", error);
+      console.error("Error loading saved data:", error);
     }
   }, []);
+
+  // Save data to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      if (sequence) {
+        localStorage.setItem("geneforge-sequence", sequence);
+      }
+      
+      if (annotations.length) {
+        localStorage.setItem("geneforge-annotations", JSON.stringify(annotations));
+      }
+      
+      if (notes.length) {
+        localStorage.setItem("geneforge-notes", JSON.stringify(notes));
+      }
+    } catch (error) {
+      console.error("Error saving data to localStorage:", error);
+    }
+  }, [sequence, annotations, notes]);
 
   // Detect sequence type whenever sequence changes
   useEffect(() => {
     if (sequence) {
       detectSequenceType(sequence);
-      try {
-        localStorage.setItem("geneforge-sequence", sequence);
-      } catch (error) {
-        console.error("Error saving sequence to localStorage:", error);
-      }
     }
   }, [sequence]);
 
@@ -143,10 +166,33 @@ export function GeneEditor() {
     toast.success(`Added annotation: ${newAnnotation.name}`);
   };
 
-  // Function to clear the sequence
+  // Handle adding a note
+  const handleNoteAdd = (note: any) => {
+    if (!selectedRange) {
+      toast.error("Please select a sequence range first");
+      return;
+    }
+    
+    const newNote = {
+      title: note.title || "Note",
+      content: note.content || "",
+      start: selectedRange.start,
+      end: selectedRange.end,
+      createdAt: new Date().toISOString()
+    };
+    
+    setNotes([...notes, newNote]);
+    toast.success(`Added note: ${newNote.title}`);
+  };
+
+  // Function to clear the sequence and associated data
   const clearSequence = () => {
     setSequence("");
     setAnnotations([]);
+    setNotes([]);
+    localStorage.removeItem("geneforge-sequence");
+    localStorage.removeItem("geneforge-annotations");
+    localStorage.removeItem("geneforge-notes");
     toast.success("Sequence cleared");
   };
 
@@ -179,6 +225,7 @@ export function GeneEditor() {
               setSequence={handleSequenceChange} 
               onRangeSelect={handleRangeSelection}
               sequenceType={sequenceType}
+              notes={notes}
             />
             
             <div className="mt-2 flex justify-between items-center">
@@ -209,7 +256,7 @@ export function GeneEditor() {
           </CardContent>
         </Card>
         
-        <Tabs defaultValue="stats">
+        <Tabs defaultValue="ai">
           <TabsList className="grid grid-cols-2">
             <TabsTrigger value="stats">Sequence Stats</TabsTrigger>
             <TabsTrigger value="ai">AI Assistant</TabsTrigger>
@@ -233,6 +280,7 @@ export function GeneEditor() {
                   selectedRange={selectedRange} 
                   sequenceType={sequenceType}
                   onAnnotationAdd={handleAnnotationAdd}
+                  onNoteAdd={handleNoteAdd}
                 />
               </CardContent>
             </Card>
@@ -249,6 +297,7 @@ export function GeneEditor() {
             selectedRange={selectedRange}
             onRangeSelect={handleRangeSelection}
             setSeqvizRef={setSeqvizRef}
+            notes={notes}
           />
         </CardContent>
       </Card>

@@ -8,8 +8,15 @@ import {
   TabsTrigger 
 } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { CircleSlash, AlertCircle } from "lucide-react";
+import { 
+  CircleSlash, 
+  AlertCircle, 
+  Eye, 
+  EyeOff, 
+  StickyNote 
+} from "lucide-react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 interface VisualizerPanelProps {
   sequence: string;
@@ -17,6 +24,13 @@ interface VisualizerPanelProps {
   selectedRange: { start: number; end: number } | null;
   onRangeSelect: (range: { start: number; end: number } | null) => void;
   setSeqvizRef: (ref: any) => void;
+  notes?: Array<{
+    title: string;
+    content: string;
+    start: number;
+    end: number;
+    createdAt: string;
+  }>;
 }
 
 export function VisualizerPanel({ 
@@ -24,12 +38,16 @@ export function VisualizerPanel({
   annotations, 
   selectedRange,
   onRangeSelect,
-  setSeqvizRef
+  setSeqvizRef,
+  notes = []
 }: VisualizerPanelProps) {
   const [viewer, setViewer] = useState<"circular" | "linear" | "both">("both");
   const [enzymes, setEnzymes] = useState<string[]>([]);
   const [showComplement, setShowComplement] = useState<boolean>(true);
   const [renderError, setRenderError] = useState<boolean>(false);
+  const [showNotes, setShowNotes] = useState<boolean>(true);
+  const [activeNote, setActiveNote] = useState<any>(null);
+  const [showNoteDialog, setShowNoteDialog] = useState<boolean>(false);
   
   // Common restriction enzymes
   const commonEnzymes = ["EcoRI", "BamHI", "HindIII", "XbaI", "PstI", "SalI"];
@@ -61,6 +79,31 @@ export function VisualizerPanel({
   const handleError = () => {
     setRenderError(true);
     toast.error("Error visualizing sequence. The sequence may be invalid or too complex.");
+  };
+
+  // Convert notes to SeqViz highlights for visualization
+  const notesToHighlights = () => {
+    if (!showNotes || !notes.length) return [];
+    
+    return notes.map((note, index) => ({
+      start: note.start,
+      end: note.end,
+      color: "#FBBF24", // Amber/yellow for notes
+      name: note.title
+    }));
+  };
+
+  // Open note dialog when a note is clicked
+  const handleNoteClick = (event: any) => {
+    // Check if the clicked element is a note highlight
+    if (event.type === "HIGHLIGHT" && event.name) {
+      // Find the corresponding note
+      const note = notes.find(n => n.title === event.name);
+      if (note) {
+        setActiveNote(note);
+        setShowNoteDialog(true);
+      }
+    }
   };
 
   if (!sequence) {
@@ -111,6 +154,9 @@ export function VisualizerPanel({
     );
   }
 
+  // Combine annotations and note highlights
+  const combinedHighlights = [...notesToHighlights()];
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 border-b">
@@ -135,6 +181,25 @@ export function VisualizerPanel({
             onClick={() => setShowComplement(!showComplement)}
           >
             Show Complement
+          </Button>
+          
+          <Button
+            variant={showNotes ? "default" : "outline"}
+            size="sm"
+            className="text-xs h-7"
+            onClick={() => setShowNotes(!showNotes)}
+          >
+            {showNotes ? (
+              <>
+                <Eye className="w-3 h-3 mr-1" />
+                Notes ({notes.length})
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3 mr-1" />
+                Notes
+              </>
+            )}
           </Button>
           
           {commonEnzymes.map(enzyme => (
@@ -166,16 +231,40 @@ export function VisualizerPanel({
               name="GeneForge Sequence"
               seq={safeSequence}
               annotations={annotations || []}
+              highlights={combinedHighlights}
               viewer={viewer}
               showComplement={showComplement}
               enzymes={enzymes}
               style={{ height: "100%", width: "100%" }}
               onSelection={handleSelection}
+              onSelectionChanged={handleSelection}
+              onHighlightClick={handleNoteClick}
               selection={selectedRange ? {
                 start: selectedRange.start,
                 end: selectedRange.end,
               } : undefined}
+              ref={setSeqvizRef}
             />
+
+            {/* Note detail dialog */}
+            <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{activeNote?.title}</DialogTitle>
+                  <DialogDescription>
+                    <div className="mt-2">
+                      <p className="text-sm">{activeNote?.content}</p>
+                      <div className="flex items-center gap-2 mt-4 text-xs text-muted-foreground">
+                        <StickyNote className="w-3 h-3" />
+                        <span>Position: {activeNote?.start + 1}-{activeNote?.end}</span>
+                        <span>•</span>
+                        <span>{new Date(activeNote?.createdAt || "").toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </DialogDescription>
+                </DialogHeader>
+              </DialogContent>
+            </Dialog>
           </ErrorBoundary>
         </div>
       </div>
