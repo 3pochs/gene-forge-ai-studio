@@ -13,7 +13,12 @@ import {
   AlertCircle, 
   Eye, 
   EyeOff, 
-  StickyNote 
+  StickyNote,
+  Maximize2,
+  Minimize2,
+  FastForward,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -31,6 +36,7 @@ interface VisualizerPanelProps {
     end: number;
     createdAt: string;
   }>;
+  onScrollToPosition?: (position: number) => void;
 }
 
 export function VisualizerPanel({ 
@@ -39,7 +45,8 @@ export function VisualizerPanel({
   selectedRange,
   onRangeSelect,
   setSeqvizRef,
-  notes = []
+  notes = [],
+  onScrollToPosition
 }: VisualizerPanelProps) {
   const [viewer, setViewer] = useState<"circular" | "linear" | "both">("both");
   const [enzymes, setEnzymes] = useState<string[]>([]);
@@ -48,6 +55,8 @@ export function VisualizerPanel({
   const [showNotes, setShowNotes] = useState<boolean>(true);
   const [activeNote, setActiveNote] = useState<any>(null);
   const [showNoteDialog, setShowNoteDialog] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // Common restriction enzymes
   const commonEnzymes = ["EcoRI", "BamHI", "HindIII", "XbaI", "PstI", "SalI"];
@@ -65,6 +74,38 @@ export function VisualizerPanel({
   useEffect(() => {
     setRenderError(false);
   }, [sequence]);
+
+  // Handle fullscreen mode
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    
+    if (!isFullscreen) {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current.requestFullscreen()
+          .then(() => setIsFullscreen(true))
+          .catch(err => toast.error("Fullscreen failed: " + err.message));
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+          .then(() => setIsFullscreen(false))
+          .catch(err => toast.error("Exit fullscreen failed: " + err.message));
+      }
+    }
+  };
+
+  // Listen for fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
   
   // Handle SeqViz selection
   const handleSelection = (selection: any) => {
@@ -89,7 +130,8 @@ export function VisualizerPanel({
       start: note.start,
       end: note.end,
       color: "#FBBF24", // Amber/yellow for notes
-      name: note.title
+      name: note.title,
+      id: `note-${index}`
     }));
   };
 
@@ -103,6 +145,26 @@ export function VisualizerPanel({
         setActiveNote(note);
         setShowNoteDialog(true);
       }
+    }
+  };
+
+  // Handle clicking on an annotation or feature to navigate to it in the editor
+  const handleAnnotationClick = (event: any) => {
+    if (!onScrollToPosition) return;
+    
+    // Handle clicks on annotations or highlights
+    if ((event.type === "ANNOTATION" || event.type === "HIGHLIGHT") && event.start !== undefined) {
+      // Select the region in the editor
+      onRangeSelect({
+        start: event.start,
+        end: event.end || event.start + 1
+      });
+      
+      // Scroll to the position in the editor
+      onScrollToPosition(event.start);
+      
+      // Show toast to inform the user
+      toast.success(`Navigated to ${event.name || "selected region"}`);
     }
   };
 
@@ -158,8 +220,8 @@ export function VisualizerPanel({
   const combinedHighlights = [...notesToHighlights()];
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 border-b">
+    <div className="h-full flex flex-col" ref={containerRef}>
+      <div className={`p-4 border-b ${isFullscreen ? 'bg-background' : ''}`}>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xl font-bold">Sequence Visualization</h2>
           <div className="flex items-center space-x-2">
@@ -170,6 +232,19 @@ export function VisualizerPanel({
                 <TabsTrigger value="both" className="text-xs px-2">Both</TabsTrigger>
               </TabsList>
             </Tabs>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={toggleFullscreen}
+            >
+              {isFullscreen ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
         
@@ -237,8 +312,8 @@ export function VisualizerPanel({
               enzymes={enzymes}
               style={{ height: "100%", width: "100%" }}
               onSelection={handleSelection}
-              onSelectionChanged={handleSelection}
               onHighlightClick={handleNoteClick}
+              onAnnotationClick={handleAnnotationClick}
               selection={selectedRange ? {
                 start: selectedRange.start,
                 end: selectedRange.end,

@@ -22,6 +22,7 @@ export function GeneEditor() {
   const [notes, setNotes] = useState<any[]>([]);
   const [seqvizRef, setSeqvizRef] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   // On mount, check localStorage for saved sequence and data
   useEffect(() => {
@@ -168,21 +169,26 @@ export function GeneEditor() {
 
   // Handle adding a note
   const handleNoteAdd = (note: any) => {
-    if (!selectedRange) {
-      toast.error("Please select a sequence range first");
-      return;
-    }
+    const range = selectedRange || { start: 0, end: sequence.length };
     
     const newNote = {
       title: note.title || "Note",
       content: note.content || "",
-      start: selectedRange.start,
-      end: selectedRange.end,
+      start: range.start,
+      end: range.end,
       createdAt: new Date().toISOString()
     };
     
     setNotes([...notes, newNote]);
     toast.success(`Added note: ${newNote.title}`);
+  };
+
+  // Scroll to a specific position in the editor
+  const scrollToPosition = (position: number) => {
+    if (editorRef.current) {
+      editorRef.current.scrollIntoView({ behavior: 'smooth' });
+      // The textarea within the SequenceEditor component will then handle the cursor position
+    }
   };
 
   // Function to clear the sequence and associated data
@@ -200,7 +206,7 @@ export function GeneEditor() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-8rem)] max-h-[calc(100vh-8rem)]">
       {/* Left panel: Editor, Sequence, Stats, AI */}
       <div className="flex flex-col gap-4 overflow-y-auto pb-4">
-        <Card>
+        <Card ref={editorRef}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Sequence Editor</h2>
@@ -226,6 +232,10 @@ export function GeneEditor() {
               onRangeSelect={handleRangeSelection}
               sequenceType={sequenceType}
               notes={notes}
+              onNoteAdd={handleNoteAdd}
+              onAnnotationAdd={handleAnnotationAdd}
+              selectedRange={selectedRange}
+              onScrollToPosition={scrollToPosition}
             />
             
             <div className="mt-2 flex justify-between items-center">
@@ -298,6 +308,7 @@ export function GeneEditor() {
             onRangeSelect={handleRangeSelection}
             setSeqvizRef={setSeqvizRef}
             notes={notes}
+            onScrollToPosition={scrollToPosition}
           />
         </CardContent>
       </Card>

@@ -1,9 +1,29 @@
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, KeyboardEvent } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { findRegions } from "@/lib/sequenceUtils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { 
+  Bookmark, 
+  BookOpenText, 
+  Translate, 
+  DNA, 
+  Plus, 
+  NotebookPen,
+  Code
+} from "lucide-react";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 interface SequenceEditorProps {
   sequence: string;
@@ -17,6 +37,10 @@ interface SequenceEditorProps {
     end: number;
     createdAt: string;
   }>;
+  onNoteAdd?: (note: any) => void;
+  onAnnotationAdd?: (annotation: any) => void;
+  selectedRange: { start: number; end: number } | null;
+  onScrollToPosition?: (position: number) => void;
 }
 
 export function SequenceEditor({ 
@@ -24,12 +48,23 @@ export function SequenceEditor({
   setSequence, 
   onRangeSelect,
   sequenceType,
-  notes = []
+  notes = [],
+  onNoteAdd,
+  onAnnotationAdd,
+  selectedRange,
+  onScrollToPosition
 }: SequenceEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [formattedSequence, setFormattedSequence] = useState<string>(sequence);
   const [displayMode, setDisplayMode] = useState<"raw" | "triplet">("raw");
-  
+  const [showNoteDialog, setShowNoteDialog] = useState(false);
+  const [showAnnotationDialog, setShowAnnotationDialog] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [annotationName, setAnnotationName] = useState("");
+  const [annotationColor, setAnnotationColor] = useState("#3B82F6");
+  const [annotationType, setAnnotationType] = useState("misc");
+
   // Regions to highlight
   const [regions, setRegions] = useState<{
     startCodons: { start: number; end: number }[];
@@ -42,6 +77,31 @@ export function SequenceEditor({
     restrictionSites: [],
     promoters: []
   });
+
+  // Effect to position cursor at the selected range if needed
+  useEffect(() => {
+    if (selectedRange && textareaRef.current) {
+      let adjustedStart = selectedRange.start;
+      let adjustedEnd = selectedRange.end;
+      
+      if (displayMode === "triplet") {
+        // Adjust for spaces in triplet mode
+        const textBeforeStart = formattedSequence.substring(0, selectedRange.start + Math.floor(selectedRange.start / 3));
+        adjustedStart = textBeforeStart.length;
+        
+        const textBeforeEnd = formattedSequence.substring(0, selectedRange.end + Math.floor(selectedRange.end / 3));
+        adjustedEnd = textBeforeEnd.length;
+      }
+      
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(adjustedStart, adjustedEnd);
+      
+      // Scroll to position
+      if (onScrollToPosition) {
+        onScrollToPosition(selectedRange.start);
+      }
+    }
+  }, [selectedRange, displayMode, formattedSequence]);
 
   // Format the sequence when it changes or display mode changes
   useEffect(() => {
@@ -103,6 +163,25 @@ export function SequenceEditor({
     setSequence(cleanValue);
   };
 
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Fix for Ctrl+A (Select All) + Backspace
+    if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+      // Let the browser handle the Select All action
+      setTimeout(() => {
+        if (textareaRef.current) {
+          const start = textareaRef.current.selectionStart;
+          const end = textareaRef.current.selectionEnd;
+          
+          // If text is selected (which it should be after Ctrl+A)
+          if (start === 0 && end === textareaRef.current.value.length) {
+            onRangeSelect({ start: 0, end: sequence.length });
+          }
+        }
+      }, 0);
+    }
+  };
+
   // Function to add common sequence elements
   const addSequenceElement = (element: string) => {
     // If there's a selection, replace it with the element
@@ -154,6 +233,121 @@ export function SequenceEditor({
       ];
     }
     return [];
+  };
+
+  // Handle adding a note
+  const handleAddNote = () => {
+    if (!noteTitle.trim()) {
+      toast.error("Please enter a note title");
+      return;
+    }
+
+    // Determine the range: either selected range or entire sequence
+    const range = selectedRange || { start: 0, end: sequence.length };
+    
+    if (onNoteAdd) {
+      onNoteAdd({
+        title: noteTitle,
+        content: noteContent,
+        start: range.start,
+        end: range.end
+      });
+      
+      setNoteTitle("");
+      setNoteContent("");
+      setShowNoteDialog(false);
+      toast.success("Note added successfully");
+    }
+  };
+
+  // Handle adding an annotation
+  const handleAddAnnotation = () => {
+    if (!annotationName.trim()) {
+      toast.error("Please enter an annotation name");
+      return;
+    }
+
+    if (!selectedRange) {
+      toast.error("Please select a sequence range for the annotation");
+      return;
+    }
+    
+    if (onAnnotationAdd) {
+      onAnnotationAdd({
+        name: annotationName,
+        color: annotationColor,
+        type: annotationType,
+        direction: 1
+      });
+      
+      setAnnotationName("");
+      setShowAnnotationDialog(false);
+      toast.success("Annotation added successfully");
+    }
+  };
+
+  // Translate DNA to amino acids
+  const translateDNA = () => {
+    if (sequenceType !== "dna") {
+      toast.error("Translation only works for DNA sequences");
+      return;
+    }
+
+    if (!selectedRange) {
+      toast.error("Please select a DNA range to translate");
+      return;
+    }
+
+    // Get the selected DNA segment
+    const dnaSegment = sequence.substring(selectedRange.start, selectedRange.end);
+    
+    // Basic translation function
+    const translateCodon = (codon: string): string => {
+      const geneticCode: Record<string, string> = {
+        'TTT': 'F', 'TTC': 'F', 'TTA': 'L', 'TTG': 'L',
+        'CTT': 'L', 'CTC': 'L', 'CTA': 'L', 'CTG': 'L',
+        'ATT': 'I', 'ATC': 'I', 'ATA': 'I', 'ATG': 'M',
+        'GTT': 'V', 'GTC': 'V', 'GTA': 'V', 'GTG': 'V',
+        'TCT': 'S', 'TCC': 'S', 'TCA': 'S', 'TCG': 'S',
+        'CCT': 'P', 'CCC': 'P', 'CCA': 'P', 'CCG': 'P',
+        'ACT': 'T', 'ACC': 'T', 'ACA': 'T', 'ACG': 'T',
+        'GCT': 'A', 'GCC': 'A', 'GCA': 'A', 'GCG': 'A',
+        'TAT': 'Y', 'TAC': 'Y', 'TAA': '*', 'TAG': '*',
+        'CAT': 'H', 'CAC': 'H', 'CAA': 'Q', 'CAG': 'Q',
+        'AAT': 'N', 'AAC': 'N', 'AAA': 'K', 'AAG': 'K',
+        'GAT': 'D', 'GAC': 'D', 'GAA': 'E', 'GAG': 'E',
+        'TGT': 'C', 'TGC': 'C', 'TGA': '*', 'TGG': 'W',
+        'CGT': 'R', 'CGC': 'R', 'CGA': 'R', 'CGG': 'R',
+        'AGT': 'S', 'AGC': 'S', 'AGA': 'R', 'AGG': 'R',
+        'GGT': 'G', 'GGC': 'G', 'GGA': 'G', 'GGG': 'G'
+      };
+      
+      return geneticCode[codon.toUpperCase()] || 'X';
+    };
+    
+    // Perform translation
+    let protein = '';
+    for (let i = 0; i < dnaSegment.length - 2; i += 3) {
+      const codon = dnaSegment.substring(i, i + 3);
+      if (codon.length === 3) {
+        protein += translateCodon(codon);
+      }
+    }
+    
+    // Show the translation result
+    toast.success(`Translation: ${protein}`);
+    
+    // Add as an annotation if significant
+    if (protein.length > 5 && onAnnotationAdd) {
+      if (window.confirm("Add this translation as an annotation?")) {
+        onAnnotationAdd({
+          name: `Translation (${protein.length} aa)`,
+          color: "#10B981", // emerald color
+          type: "CDS",
+          direction: 1
+        });
+      }
+    }
   };
 
   // Render notes as tooltips where applicable
@@ -220,6 +414,58 @@ export function SequenceEditor({
           >
             Triplet
           </button>
+          
+          <div className="flex space-x-1 ml-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setShowNoteDialog(true)}
+                    className="h-6 w-6 p-0"
+                  >
+                    <NotebookPen className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Add Note</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setShowAnnotationDialog(true)}
+                    className="h-6 w-6 p-0"
+                    disabled={!selectedRange}
+                  >
+                    <Bookmark className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Add Annotation</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={translateDNA}
+                    className="h-6 w-6 p-0"
+                    disabled={sequenceType !== "dna" || !selectedRange}
+                  >
+                    <Translate className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Translate DNA</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
         
         <div className="flex flex-wrap gap-1">
@@ -251,12 +497,131 @@ export function SequenceEditor({
           value={formattedSequence}
           onChange={handleChange}
           onSelect={handleSelect}
+          onKeyDown={handleKeyDown}
           placeholder="Paste or type your DNA, RNA, or protein sequence here..."
           className="font-mono resize-none h-60 sequence-editor"
           spellCheck="false"
         />
         {renderNotes()}
       </div>
+      
+      {/* Add Note Dialog */}
+      <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Note</DialogTitle>
+            <DialogDescription>
+              {selectedRange ? 
+                `Add a note for selection (positions ${selectedRange.start + 1}-${selectedRange.end})` : 
+                "Add a note for the entire sequence"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="title">Title</Label>
+              <Input
+                id="title"
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
+                placeholder="Note title"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="content">Content</Label>
+              <Textarea
+                id="content"
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                placeholder="Note content"
+                className="h-24"
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNoteDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddNote}>
+              Add Note
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Add Annotation Dialog */}
+      <Dialog open={showAnnotationDialog} onOpenChange={setShowAnnotationDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Annotation</DialogTitle>
+            <DialogDescription>
+              {selectedRange ? 
+                `Create an annotation for positions ${selectedRange.start + 1}-${selectedRange.end}` :
+                "Please select a sequence range first"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={annotationName}
+                onChange={(e) => setAnnotationName(e.target.value)}
+                placeholder="Annotation name"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="color">Color</Label>
+              <div className="flex items-center space-x-2">
+                <Input
+                  type="color"
+                  id="color"
+                  value={annotationColor}
+                  onChange={(e) => setAnnotationColor(e.target.value)}
+                  className="w-12 h-8 p-1"
+                />
+                <Input
+                  type="text"
+                  value={annotationColor}
+                  onChange={(e) => setAnnotationColor(e.target.value)}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="type">Type</Label>
+              <select
+                id="type"
+                value={annotationType}
+                onChange={(e) => setAnnotationType(e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option value="misc">Miscellaneous</option>
+                <option value="gene">Gene</option>
+                <option value="CDS">Coding Sequence</option>
+                <option value="promoter">Promoter</option>
+                <option value="terminator">Terminator</option>
+                <option value="RBS">Ribosome Binding Site</option>
+                <option value="restriction_site">Restriction Site</option>
+              </select>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAnnotationDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddAnnotation} disabled={!selectedRange}>
+              Add Annotation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
