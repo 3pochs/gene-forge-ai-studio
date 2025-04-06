@@ -62,6 +62,9 @@ export function VisualizerPanel({
     );
   }
 
+  // Make sure we have a valid sequence to prevent errors
+  const safeSequence = sequence || "";
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 border-b">
@@ -103,21 +106,23 @@ export function VisualizerPanel({
       </div>
 
       <div className="flex-1 relative">
-        {sequence.length > 0 ? (
-          <SeqViz
-            name="GeneForge Sequence"
-            seq={sequence}
-            annotations={annotations}
-            viewer={viewer as "circular" | "linear" | "both"}
-            showComplement={showComplement}
-            enzymes={enzymes}
-            style={{ height: "100%", width: "100%" }}
-            onSelection={handleSelection}
-            selection={selectedRange ? {
-              start: selectedRange.start,
-              end: selectedRange.end,
-            } : undefined}
-          />
+        {safeSequence.length > 0 ? (
+          <div className="h-full w-full">
+            <SeqViz
+              name="GeneForge Sequence"
+              seq={safeSequence}
+              annotations={annotations || []}
+              viewer={viewer}
+              showComplement={showComplement}
+              enzymes={enzymes}
+              style={{ height: "100%", width: "100%" }}
+              onSelection={handleSelection}
+              selection={selectedRange ? {
+                start: selectedRange.start,
+                end: selectedRange.end,
+              } : undefined}
+            />
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-muted-foreground">

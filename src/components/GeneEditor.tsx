@@ -23,13 +23,18 @@ export function GeneEditor() {
   const [selectedRange, setSelectedRange] = useState<{start: number, end: number} | null>(null);
   const [annotations, setAnnotations] = useState<any[]>([]);
   const [seqvizRef, setSeqvizRef] = useState<any>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   // On mount, check localStorage for saved sequence
   useEffect(() => {
-    const savedSequence = localStorage.getItem("geneforge-sequence");
-    if (savedSequence) {
-      setSequence(savedSequence);
-      detectSequenceType(savedSequence);
+    try {
+      const savedSequence = localStorage.getItem("geneforge-sequence");
+      if (savedSequence) {
+        setSequence(savedSequence);
+        detectSequenceType(savedSequence);
+      }
+    } catch (error) {
+      console.error("Error loading saved sequence:", error);
     }
   }, []);
 
@@ -37,12 +42,26 @@ export function GeneEditor() {
   useEffect(() => {
     if (sequence) {
       detectSequenceType(sequence);
-      localStorage.setItem("geneforge-sequence", sequence);
+      try {
+        localStorage.setItem("geneforge-sequence", sequence);
+      } catch (error) {
+        console.error("Error saving sequence to localStorage:", error);
+      }
     }
   }, [sequence]);
 
   const detectSequenceType = (seq: string) => {
+    if (!seq) {
+      setSequenceType("unknown");
+      return;
+    }
+    
     const cleanSeq = seq.replace(/\s+/g, "").toUpperCase();
+    
+    if (!cleanSeq.length) {
+      setSequenceType("unknown");
+      return;
+    }
     
     // Check if mostly DNA nucleotides
     const dnaRegex = /^[ATGCN]+$/;
@@ -65,22 +84,39 @@ export function GeneEditor() {
   };
 
   const addExampleSequence = (example: string) => {
-    const selectedExample = exampleSequences.find(ex => ex.name === example);
-    if (selectedExample) {
-      setSequence(selectedExample.sequence);
-      setAnnotations(selectedExample.annotations || []);
-      toast.success(`Loaded example: ${selectedExample.name}`);
+    try {
+      const selectedExample = exampleSequences.find(ex => ex.name === example);
+      if (selectedExample) {
+        setSequence(selectedExample.sequence);
+        setAnnotations(selectedExample.annotations || []);
+        toast.success(`Loaded example: ${selectedExample.name}`);
+      }
+    } catch (error) {
+      console.error("Error loading example sequence:", error);
+      toast.error("Failed to load example sequence");
     }
   };
 
   const handleFileUpload = (content: string) => {
     try {
+      setIsProcessing(true);
       const cleanedSequence = cleanGeneSequence(content);
       setSequence(cleanedSequence);
       toast.success("Sequence uploaded successfully");
     } catch (error) {
       toast.error("Failed to process file");
       console.error(error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSequenceChange = (newSequence: string) => {
+    try {
+      setSequence(newSequence);
+    } catch (error) {
+      console.error("Error updating sequence:", error);
+      toast.error("Error updating sequence");
     }
   };
 
@@ -131,6 +167,7 @@ export function GeneEditor() {
                   variant="outline"
                   size="sm"
                   onClick={clearSequence}
+                  disabled={isProcessing || !sequence}
                 >
                   Clear
                 </Button>
@@ -139,7 +176,7 @@ export function GeneEditor() {
             
             <SequenceEditor 
               sequence={sequence} 
-              setSequence={setSequence} 
+              setSequence={handleSequenceChange} 
               onRangeSelect={handleRangeSelection}
               sequenceType={sequenceType}
             />
@@ -151,10 +188,20 @@ export function GeneEditor() {
                   "No selection"}
               </div>
               <div className="flex space-x-2">
-                <Button variant="outline" size="sm" onClick={() => addExampleSequence("GFP")}>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => addExampleSequence("GFP")}
+                  disabled={isProcessing}
+                >
                   GFP Example
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => addExampleSequence("pUC19")}>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => addExampleSequence("pUC19")}
+                  disabled={isProcessing}
+                >
                   pUC19 Example
                 </Button>
               </div>
